@@ -312,8 +312,8 @@ pub struct DomainEntry<
 > {
     /// The unique identifier of the domain.
     pub id: u32,
-    /// The account that owns this domain.
-    pub owner: User<A>,
+    /// The account that owns this domain. `None` means manager-owned (no specific account).
+    pub owner: Option<A>,
     /// The state of the domain.
     pub state: DomainState,
     /// The aggregation that is not yet completed.
@@ -352,7 +352,7 @@ impl<
     #[allow(clippy::too_many_arguments)]
     pub fn create(
         id: u32,
-        owner: User<A>,
+        owner: Option<A>,
         next_aggregation_id: u64,
         max_aggregation_size: AggregationSize,
         publish_queue_size: u32,

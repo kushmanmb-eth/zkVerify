@@ -522,7 +522,7 @@ impl crate::Domain<Test> {
     #[allow(clippy::too_many_arguments)]
     pub(crate) fn create(
         id: u32,
-        owner: crate::data::User<crate::AccountOf<Test>>,
+        owner: Option<crate::AccountOf<Test>>,
         next_aggregation_id: u64,
         max_aggregation_size: AggregationSize,
         publish_queue_size: u32,
