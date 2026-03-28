@@ -181,6 +181,8 @@ jobs:
     runs-on: warp-ubuntu-latest-x64-2x
     name: Create release
     needs: [ check-requirements, publish-docker-image, publish-docker-image-fastruntime ]
+    permissions:
+      contents: write
     steps:
       - name: Retrieve saved runtimes wasm
         uses: actions/download-artifact@v4
