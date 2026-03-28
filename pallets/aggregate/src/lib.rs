@@ -78,7 +78,7 @@ pub mod pallet {
 
     pub use crate::data::{AggregateSecurityRules, AggregationSize, ProofSecurityRules};
     use crate::data::{
-        CountableTicket, Delivery, DeliveryParams, DomainState, Reserve, StatementEntry, User,
+        CountableTicket, Delivery, DeliveryParams, DomainState, Reserve, StatementEntry,
     };
 
     use super::WeightInfo;
@@ -119,7 +119,7 @@ pub mod pallet {
     pub(crate) type TicketAllowListOf<T> = <T as Config>::ConsiderationAllowList;
 
     /// The in-code storage version.
-    const STORAGE_VERSION: StorageVersion = StorageVersion::new(4);
+    const STORAGE_VERSION: StorageVersion = StorageVersion::new(5);
 
     #[pallet::pallet]
     #[pallet::storage_version(STORAGE_VERSION)]
@@ -423,7 +423,7 @@ pub mod pallet {
         #[allow(clippy::too_many_arguments)]
         pub fn try_create(
             id: u32,
-            owner: User<AccountOf<T>>,
+            owner: Option<AccountOf<T>>,
             next_aggregation_id: u64,
             max_aggregation_size: AggregationSize,
             publish_queue_size: u32,
@@ -628,7 +628,7 @@ pub mod pallet {
                     account
                         == self
                             .owner
-                            .account()
+                            .as_ref()
                             .expect("The domain does not have an owner; qed")
                 }
                 ProofSecurityRules::OnlyAllowlisted => {
@@ -678,7 +678,7 @@ pub mod pallet {
         ///
         fn increase_footprint_count(&mut self, amount: u64) -> Result<(), DispatchError> {
             // If the owner is _not an account_ cannot own any ticket.
-            let owner = match self.owner.account() {
+            let owner = match self.owner.as_ref() {
                 Some(owner) => owner.clone(),
                 None => return Ok(()),
             };
@@ -702,7 +702,7 @@ pub mod pallet {
         /// See [`increase_footprint_count`] for more details about implentation.
         ///
         fn decrease_footprint_count(&mut self, amount: u64) -> Result<(), DispatchError> {
-            let owner = match self.owner.account() {
+            let owner = match self.owner.as_ref() {
                 Some(owner) => owner.clone(),
                 None => return Ok(()),
             };
@@ -867,7 +867,7 @@ pub mod pallet {
             domain_id: u32,
             aggregation_id: u64,
         ) -> DispatchResultWithPostInfo {
-            let aggregator = User::<T::AccountId>::from_origin::<T>(origin)?;
+            let aggregator = caller_from_origin::<T>(origin)?;
             let (root, size, destination, delivery_owner, delivery_fee) =
                 Domains::<T>::try_mutate(domain_id, |domain| {
                     let domain = domain.as_mut().ok_or_else(|| {
@@ -883,8 +883,8 @@ pub mod pallet {
                         )
                     })?;
                     if !domain.aggregate_rules.can_user_aggregate_it::<T>(
-                        &aggregator,
-                        &domain.owner,
+                        aggregator.as_ref(),
+                        domain.owner.as_ref(),
                         &domain.delivery.owner,
                         &aggregation,
                     ) {
@@ -896,7 +896,7 @@ pub mod pallet {
                         handle_held_funds::<T>(
                             HoldReason::Aggregation,
                             &s.account,
-                            aggregator.account(),
+                            aggregator.as_ref(),
                             s.reserve.aggregate,
                         );
                         handle_held_funds::<T>(
@@ -937,7 +937,10 @@ pub mod pallet {
                 delivery_owner,
             )?;
 
-            Ok(aggregator.post_info((T::WeightInfo::aggregate(size) + dispatch_weight).into()))
+            Ok(PostDispatchInfo {
+                actual_weight: (T::WeightInfo::aggregate(size) + dispatch_weight).into(),
+                pays_fee: if aggregator.is_none() { Pays::No } else { Pays::Yes },
+            })
         }
 
         #[pallet::call_index(1)]
@@ -974,13 +977,10 @@ pub mod pallet {
             delivery: Delivery<BalanceOf<T>>,
             delivery_owner: Option<AccountOf<T>>,
         ) -> DispatchResultWithPostInfo {
-            let caller = User::<T::AccountId>::from_origin::<T>(origin)?;
+            let caller = caller_from_origin::<T>(origin)?;
             let destination = delivery.destination.clone();
-            if !caller.can_create_domain(&destination) {
-                Err(BadOrigin)?
-            }
             let delivery_owner = delivery_owner
-                .or_else(|| caller.account().cloned())
+                .or_else(|| caller.clone())
                 .ok_or(Error::<T>::MissedDeliveryOwnership)?;
             let id = Self::next_domain_id();
             if id == u32::MAX {
@@ -991,8 +991,7 @@ pub mod pallet {
             let delivery = DeliveryParams::new(delivery_owner, delivery);
 
             let ticket_domain = caller
-                .clone()
-                .account()
+                .as_ref()
                 .map(|a| {
                     T::ConsiderationDomain::new(
                         a,
@@ -1009,7 +1008,7 @@ pub mod pallet {
                 .transpose()?;
             let ticket_allowlist = if proof_rules == ProofSecurityRules::OnlyAllowlisted {
                 caller
-                    .account()
+                    .as_ref()
                     .map(|a| T::ConsiderationAllowList::new(a, Footprint::from_parts(0, 0)))
                     .transpose()?
             } else {
@@ -1036,7 +1035,10 @@ pub mod pallet {
             NextDomainId::<T>::put(next_id);
             Self::deposit_event(Event::NewDomain { id });
 
-            Ok(caller.post_info(None))
+            Ok(PostDispatchInfo {
+                actual_weight: None,
+                pays_fee: if caller.is_none() { Pays::No } else { Pays::Yes },
+            })
         }
 
         /// Hold a domain. Put the domain in `Hold` or `Removable` state. Only the domain owner
@@ -1065,10 +1067,10 @@ pub mod pallet {
         /// - domain_id: The domain identifier.
         #[pallet::call_index(2)]
         pub fn hold_domain(origin: OriginFor<T>, domain_id: u32) -> DispatchResultWithPostInfo {
-            let owner = User::<T::AccountId>::from_origin::<T>(origin)?;
+            let owner = caller_from_origin::<T>(origin)?;
             Domains::<T>::try_mutate_exists(domain_id, |domain| {
                 match domain {
-                    Some(domain) if owner.can_handle_domain::<T>(domain) => {
+                    Some(domain) if owner.is_none() || domain.owner == owner => {
                         if domain.state == DomainState::Ready {
                             domain.update_hold_state();
                             domain.emit_state_changed_event();
@@ -1082,7 +1084,10 @@ pub mod pallet {
                 Ok::<_, DispatchError>(())
             })?;
 
-            Ok(owner.post_info(None))
+            Ok(PostDispatchInfo {
+                actual_weight: None,
+                pays_fee: if owner.is_none() { Pays::No } else { Pays::Yes },
+            })
         }
 
         /// Unregister an empty domain that was put on hold previously and is in `Removable` state. Only
@@ -1104,21 +1109,21 @@ pub mod pallet {
             origin: OriginFor<T>,
             domain_id: u32,
         ) -> DispatchResultWithPostInfo {
-            let owner = User::<T::AccountId>::from_origin::<T>(origin)?;
+            let owner = caller_from_origin::<T>(origin)?;
             Domains::<T>::try_mutate_exists(domain_id, |domain| {
                 *domain = match domain {
-                    Some(domain) if owner.can_handle_domain::<T>(domain) => {
+                    Some(domain) if owner.is_none() || domain.owner == owner => {
                         if domain.state != DomainState::Removable {
                             Err(Error::<T>::InvalidDomainState)?
                         } else {
                             if let (Some(o), Some(t)) =
-                                (owner.account(), domain.ticket_domain.take())
+                                (owner.as_ref(), domain.ticket_domain.take())
                             {
                                 let _ =
                                     t.drop(o).defensive_proof("Drop should always succeed: qed");
                             }
                             if let (Some(o), Some(t)) = (
-                                owner.account(),
+                                owner.as_ref(),
                                 domain.ticket_allowlist.take().map(|t| t.ticket),
                             ) {
                                 let _ =
@@ -1135,7 +1140,10 @@ pub mod pallet {
                 Ok::<_, DispatchError>(())
             })?;
 
-            Ok(owner.post_info(None))
+            Ok(PostDispatchInfo {
+                actual_weight: None,
+                pays_fee: if owner.is_none() { Pays::No } else { Pays::Yes },
+            })
         }
 
         /// Set the total delivery aggregation fee. Every submitter will hold this fee (at the time of proof submission)
@@ -1160,10 +1168,14 @@ pub mod pallet {
             fee: BalanceOf<T>,
             owner_tip: BalanceOf<T>,
         ) -> DispatchResult {
-            let owner = User::<T::AccountId>::from_origin::<T>(origin)?;
+            let owner = caller_from_origin::<T>(origin)?;
             Domains::<T>::try_mutate_exists(domain_id, |domain| {
                 match domain {
-                    Some(domain) if owner.can_set_total_delivery_fee::<T>(domain) => {
+                    Some(domain)
+                        if owner.is_none()
+                            || domain.owner == owner
+                            || owner.as_ref() == Some(&domain.delivery.owner) =>
+                    {
                         domain.delivery.set_fee(fee);
                         domain.delivery.set_owner_tip(owner_tip);
                     }
@@ -1193,10 +1205,10 @@ pub mod pallet {
             domain_id: u32,
             submitters: Vec<AccountOf<T>>,
         ) -> DispatchResult {
-            let owner = User::<T::AccountId>::from_origin::<T>(origin)?;
+            let owner = caller_from_origin::<T>(origin)?;
             Domains::<T>::try_mutate_exists(domain_id, |maybe_domain| match maybe_domain {
                 None => Err(Error::<T>::UnknownDomainId)?,
-                Some(domain) if !owner.can_handle_domain::<T>(domain) => Err(BadOrigin)?,
+                Some(domain) if !(owner.is_none() || domain.owner == owner) => Err(BadOrigin)?,
                 Some(domain) if domain.state != DomainState::Ready => {
                     Err(InvalidDomainParams::<T>)?
                 }
@@ -1224,10 +1236,10 @@ pub mod pallet {
             domain_id: u32,
             submitters: Vec<AccountOf<T>>,
         ) -> DispatchResult {
-            let owner = User::<T::AccountId>::from_origin::<T>(origin)?;
+            let owner = caller_from_origin::<T>(origin)?;
             Domains::<T>::try_mutate_exists(domain_id, |maybe_domain| match maybe_domain {
                 None => Err(Error::<T>::UnknownDomainId)?,
-                Some(domain) if !owner.can_handle_domain::<T>(domain) => Err(BadOrigin)?,
+                Some(domain) if !(owner.is_none() || domain.owner == owner) => Err(BadOrigin)?,
                 Some(domain) => domain
                     .try_remove_submitters(submitters.as_slice())
                     .map(|_| domain.handle_hold_state())
@@ -1286,77 +1298,31 @@ pub mod pallet {
         }
     }
 
-    impl<A> User<A> {
-        pub fn from_origin<T: Config<AccountId = A>>(
-            origin: OriginFor<T>,
-        ) -> Result<Self, BadOrigin> {
-            match T::ManagerOrigin::ensure_origin(origin.clone()) {
-                Ok(_) => Ok(User::Manager),
-                Err(_) => ensure_signed(origin).map(User::Account),
-            }
-        }
-
-        pub fn is_manager(&self) -> bool {
-            matches!(self, User::Manager)
-        }
-
-        pub fn can_handle_domain<T: Config<AccountId = A>>(&self, domain: &Domain<T>) -> bool
-        where
-            A: PartialEq + Debug + Ord + Clone + Encode,
-        {
-            match self {
-                User::Account(_) => &domain.owner == self,
-                User::Manager => true,
-            }
-        }
-
-        pub fn can_set_total_delivery_fee<T: Config<AccountId = A>>(
-            &self,
-            domain: &Domain<T>,
-        ) -> bool
-        where
-            A: PartialEq + Debug + Ord + Clone + Encode,
-        {
-            match self {
-                User::Account(account) => {
-                    &domain.owner == self || &domain.delivery.owner == account
-                }
-                User::Manager => true,
-            }
-        }
-
-        pub fn can_create_domain(&self, _destination: &Destination) -> bool {
-            // With only Destination::None available, any user can create a domain
-            true
-        }
-
-        pub fn post_info(&self, actual_weight: Option<Weight>) -> PostDispatchInfo {
-            PostDispatchInfo {
-                actual_weight,
-                pays_fee: self.pays(),
-            }
-        }
-
-        pub fn pays(&self) -> Pays {
-            match self {
-                User::Manager => Pays::No,
-                _ => Pays::Yes,
-            }
+    /// Determine the caller from the origin.
+    ///
+    /// Returns `None` if the origin satisfies `ManagerOrigin` (privileged caller, no fees),
+    /// or `Some(account_id)` if the origin is a regular signed account.
+    fn caller_from_origin<T: Config>(
+        origin: OriginFor<T>,
+    ) -> Result<Option<T::AccountId>, BadOrigin> {
+        match T::ManagerOrigin::ensure_origin(origin.clone()) {
+            Ok(_) => Ok(None),
+            Err(_) => ensure_signed(origin).map(Some),
         }
     }
 
     impl AggregateSecurityRules {
         fn can_user_aggregate_it<T: Config>(
             &self,
-            aggregator: &User<T::AccountId>,
-            domain_owner: &User<T::AccountId>,
+            aggregator: Option<&T::AccountId>,
+            domain_owner: Option<&T::AccountId>,
             delivery_owner: &T::AccountId,
             aggregation: &Aggregation<T>,
         ) -> bool {
             let is_owner_auth = || {
-                aggregator.account() == Some(delivery_owner)
+                aggregator == Some(delivery_owner)
                     || aggregator == domain_owner
-                    || aggregator.is_manager()
+                    || aggregator.is_none()
             };
             match self {
                 AggregateSecurityRules::Untrusted => true,

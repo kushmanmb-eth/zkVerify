@@ -63,7 +63,7 @@ impl<T: crate::Config> UncheckedOnRuntimeUpgrade for InnerMigrateV0ToV1<T> {
                     domain_id,
                     crate::Domain::<T>(crate::data::DomainEntry {
                         id: domain.id,
-                        owner: domain.owner,
+                        owner: domain.owner.account().cloned(),
                         state: domain.state,
                         next: domain.next,
                         max_aggregation_size: domain.max_aggregation_size,

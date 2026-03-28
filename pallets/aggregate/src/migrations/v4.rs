@@ -68,7 +68,7 @@ impl<T: crate::Config> From<v3::Domain<T>> for crate::Domain<T> {
     ) -> Self {
         crate::Domain::<T>(crate::data::DomainEntry {
             id,
-            owner,
+            owner: owner.account().cloned(),
             state,
             next,
             max_aggregation_size,
@@ -217,10 +217,10 @@ mod tests {
                     crate::Domains::<Test>::take(id).unwrap();
                 (owner, state)
             };
-            use crate::data::{DomainState, User};
-            assert_eq!(domain_data(23), (User::from(123), DomainState::Ready,));
-            assert_eq!(domain_data(42), (User::from(321), DomainState::Hold,));
-            assert_eq!(domain_data(2), (User::from(42), DomainState::Removable,));
+            use crate::data::DomainState;
+            assert_eq!(domain_data(23), (Some(123_u64), DomainState::Ready,));
+            assert_eq!(domain_data(42), (Some(321_u64), DomainState::Hold,));
+            assert_eq!(domain_data(2), (Some(42_u64), DomainState::Removable,));
 
             // Check that weight is as expected
             assert_eq!(
