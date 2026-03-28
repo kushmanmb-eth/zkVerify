@@ -30,10 +30,6 @@ use sp_core::{Get, H256};
 pub mod benchmarking;
 pub mod benchmarking_verify_proof;
 pub mod extend_benchmarking;
-pub mod fake_extend_benchmarking;
-
-#[cfg(all(feature = "runtime-benchmarks", not(feature = "extend-benchmarks")))]
-pub use fake_extend_benchmarking as extend_benchmarking;
 
 mod verifier_should;
 mod weight;
