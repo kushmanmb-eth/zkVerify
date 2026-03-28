@@ -122,6 +122,8 @@ jobs:
     runs-on: warp-ubuntu-latest-x64-2x
     name: Create release
     needs: [ check-requirements, build-docker, extract-runtimes ]
+    permissions:
+      contents: write
     steps:
       - name: Retrieve Docker runtime image artifact
         uses: actions/download-artifact@v4
