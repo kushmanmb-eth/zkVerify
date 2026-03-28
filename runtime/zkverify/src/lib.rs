@@ -1241,7 +1241,69 @@ pub type Executive = frame_executive::Executive<
 #[macro_use]
 extern crate frame_benchmarking;
 
-#[cfg(feature = "runtime-benchmarks")]
+#[cfg(all(feature = "runtime-benchmarks", not(feature = "extend-benchmarks")))]
+mod benches {
+    define_benchmarks!(
+        [frame_benchmarking, BaselineBench::<Runtime>]
+        [frame_system, SystemBench::<Runtime>]
+        [frame_system_extensions, SystemExtensionsBench::<Runtime>]
+        [pallet_balances, Balances]
+        [pallet_bags_list, VoterList]
+        [pallet_babe, Babe]
+        [pallet_grandpa, Grandpa]
+        [pallet_timestamp, Timestamp]
+        [pallet_sudo, Sudo]
+        [pallet_multisig, Multisig]
+        [pallet_scheduler, Scheduler]
+        [pallet_preimage, Preimage]
+        [pallet_session, SessionBench::<Runtime>]
+        [pallet_staking, Staking]
+        [frame_election_provider_support, ElectionProviderBench::<Runtime>]
+        [pallet_conviction_voting, ConvictionVoting]
+        [pallet_treasury, Treasury]
+        [pallet_bounties, Bounties]
+        [pallet_child_bounties, ChildBounties]
+        [pallet_referenda, Referenda]
+        [pallet_utility, Utility]
+        [pallet_vesting, Vesting]
+        [pallet_proxy, Proxy]
+        [pallet_identity, Identity]
+        [pallet_transaction_payment, TransactionPayment]
+        // our pallets
+        [pallet_aggregate, Aggregate]
+        [pallet_claim, Claim]
+        [pallet_token_claim, TokenClaim]
+        // verifiers
+        [pallet_ezkl_verifier, EzklVerifierBench::<Runtime>]
+        [pallet_fflonk_verifier, FflonkVerifierBench::<Runtime>]
+        [pallet_groth16_verifier, Groth16VerifierBench::<Runtime>]
+        [pallet_risc0_verifier, Risc0VerifierBench::<Runtime>]
+        [pallet_risc0_verifier_verify_proof, Risc0VerifierVerifyProofBench::<Runtime>]
+        [pallet_ultrahonk_verifier, UltrahonkVerifierBench::<Runtime>]
+        [pallet_ultraplonk_verifier, UltraplonkVerifierBench::<Runtime>]
+        [pallet_plonky2_verifier, Plonky2VerifierBench::<Runtime>]
+        [pallet_plonky2_verifier_verify_proof, Plonky2VerifierVerifyProofBench::<Runtime>]
+        [pallet_sp1_verifier, Sp1VerifierBench::<Runtime>]
+        // parachains
+        [parachains::configuration, Configuration]
+        [parachains::disputes, ParasDisputes]
+        [parachains::slashing, ParasSlashing]
+        [parachains::hrmp, Hrmp]
+        [parachains::inclusion, ParaInclusion]
+        [parachains::initializer, Initializer]
+        [parachains::paras, Paras]
+        [parachains::paras_inherent, ParaInherent]
+        [parachains::on_demand, OnDemandAssignmentProvider]
+        [parachains::coretime, Coretime]
+        [pallet_message_queue, MessageQueue]
+        // xcm
+        [pallet_xcm, xcm::XcmPalletBench::<Runtime>]
+        [xcm::pallet_xcm_benchmarks_fungible, xcm::XcmPalletBenchFungible::<Runtime>]
+        [xcm::pallet_xcm_benchmarks_generic, xcm::XcmPalletBenchGeneric::<Runtime>]
+    );
+}
+
+#[cfg(all(feature = "runtime-benchmarks", feature = "extend-benchmarks"))]
 mod benches {
     define_benchmarks!(
         [frame_benchmarking, BaselineBench::<Runtime>]
@@ -1828,6 +1890,7 @@ impl_runtime_apis! {
             use pallet_groth16_verifier::benchmarking::Pallet as Groth16VerifierBench;
             use pallet_risc0_verifier::benchmarking::Pallet as Risc0VerifierBench;
             use pallet_risc0_verifier::benchmarking_verify_proof::Pallet as Risc0VerifierVerifyProofBench;
+            #[cfg(feature = "extend-benchmarks")]
             use pallet_risc0_verifier::extend_benchmarking::Pallet as Risc0VerifierExtendBench;
             use pallet_ultrahonk_verifier::benchmarking::Pallet as UltrahonkVerifierBench;
             use pallet_ultraplonk_verifier::benchmarking::Pallet as UltraplonkVerifierBench;
@@ -1865,6 +1928,7 @@ impl_runtime_apis! {
             use pallet_groth16_verifier::benchmarking::Pallet as Groth16VerifierBench;
             use pallet_risc0_verifier::benchmarking::Pallet as Risc0VerifierBench;
             use pallet_risc0_verifier::benchmarking_verify_proof::Pallet as Risc0VerifierVerifyProofBench;
+            #[cfg(feature = "extend-benchmarks")]
             use pallet_risc0_verifier::extend_benchmarking::Pallet as Risc0VerifierExtendBench;
             use pallet_ultrahonk_verifier::benchmarking::Pallet as UltrahonkVerifierBench;
             use pallet_ultraplonk_verifier::benchmarking::Pallet as UltraplonkVerifierBench;
